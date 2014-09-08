@@ -349,7 +349,9 @@ maxmultiple(k::UInt128) = div(typemax(UInt128), k + (k == 0))*k - 1
 # maximum multiple of k within 1:2^32 or 1:2^64, depending on size
 maxmultiplemix(k::UInt64) = (div((k >> 32 != 0)*0x0000000000000000FFFFFFFF00000000 + 0x0000000100000000, k + (k == 0))*k - 1) % UInt64
 
-immutable RandIntGen{T<:Integer, U<:Unsigned}
+abstract RangeGenerator
+
+immutable RandIntGen{T<:Integer, U<:Unsigned} <: RangeGenerator
     a::T   # first element of the range
     k::U   # range length or zero for full range
     u::U   # rejection threshold
@@ -361,15 +363,35 @@ RandIntGen{T}(a::T, k::UInt64) = RandIntGen{T,UInt64}(a, k, maxmultiplemix(k))
 
 
 # generator for ranges
-RandIntGen{T<:Unsigned}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), last(r) - first(r) + one(T))
+inrange{T<:Unsigned}(r::UnitRange{T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), last(r) - first(r) + one(T))
 
 # specialized versions
 for (T, U) in [(UInt8, UInt32), (UInt16, UInt32),
                (Int8, UInt32), (Int16, UInt32), (Int32, UInt32), (Int64, UInt64), (Int128, UInt128),
                (Bool, UInt32)]
 
-    @eval RandIntGen(r::UnitRange{$T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), convert($U, unsigned(last(r) - first(r)) + one($U))) # overflow ok
+    @eval inrange(r::UnitRange{$T}) = isempty(r) ? error("range must be non-empty") : RandIntGen(first(r), convert($U, unsigned(last(r) - first(r)) + one($U))) # overflow ok
 end
+
+
+# generator for BigInt
+immutable RandIntGenBigInt <: RangeGenerator
+    a::BigInt      # first
+    m::BigInt      # range length - 1
+    nlimbs::Int    # number of limbs in generated BigInt's
+    mask::Culong   # applied to the highest limb
+end
+
+function inrange(r::UnitRange{BigInt})
+    m = last(r) - first(r)
+    m < 0 && error("range must be non-empty")
+    nd = ndigits(m, 2)
+    nlimbs, highbits = divrem(nd, 8*sizeof(Culong))
+    highbits > 0 && (nlimbs += 1)
+    mask = highbits == 0 ? ~zero(Culong) : one(Culong)<<highbits - one(Culong)
+    return RandIntGenBigInt(first(r), m, nlimbs, mask)
+end
+
 
 # this function uses 32 bit entropy for small ranges of length <= typemax(UInt32) + 1
 # RandIntGen is responsible for providing the right value of k
@@ -397,23 +419,39 @@ function rand{T<:Integer, U<:Unsigned}(mt::MersenneTwister, g::RandIntGen{T,U})
     (unsigned(g.a) + rem_knuth(x, g.k)) % T
 end
 
-rand{T<:Union(Signed,Unsigned,Bool,Char)}(mt::MersenneTwister, r::UnitRange{T}) = rand(mt, RandIntGen(r))
+function rand(rng::AbstractRNG, g::RandIntGenBigInt)
+    x = BigInt()
+    while true
+        xd = ccall((:__gmpz_limbs_write, :libgmp), Ptr{Culong}, (Ptr{BigInt}, Cint), &x, g.nlimbs)
+        limbs = pointer_to_array(xd, g.nlimbs)
+        rand!(rng, limbs)
+        limbs[end] &= g.mask
+        ccall((:__gmpz_limbs_finish, :libgmp), Void, (Ptr{BigInt}, Cint), &x, g.nlimbs)
+        x <= g.m && break
+    end
+    ccall((:__gmpz_add, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &x, &x, &g.a)
+    return x
+end
+
+
+rand{T<:Union(Signed,Unsigned,BigInt,Bool,Char)}(mt::MersenneTwister, r::UnitRange{T}) = rand(mt, inrange(r))
+
 
 # Randomly draw a sample from an AbstractArray r
 # (e.g. r is a range 0:2:8 or a vector [2, 3, 5, 7])
 rand(mt::MersenneTwister, r::AbstractArray) = @inbounds return r[rand(mt, 1:length(r))]
 
-function rand!(mt::MersenneTwister, A::AbstractArray, g::RandIntGen)
+function rand!(mt::MersenneTwister, A::AbstractArray, g::RangeGenerator)
     for i = 1 : length(A)
         @inbounds A[i] = rand(mt, g)
     end
     return A
 end
 
-rand!{T<:Union(Signed,Unsigned,Bool,Char)}(mt::MersenneTwister, A::AbstractArray, r::UnitRange{T}) = rand!(mt, A, RandIntGen(r))
+rand!{T<:Union(Signed,Unsigned,BigInt,Bool,Char)}(mt::MersenneTwister, A::AbstractArray, r::UnitRange{T}) = rand!(mt, A, inrange(r))
 
 function rand!(mt::MersenneTwister, A::AbstractArray, r::AbstractArray)
-    g = RandIntGen(1:(length(r)))
+    g = inrange(1:(length(r)))
     for i = 1 : length(A)
         @inbounds A[i] = r[rand(mt, g)]
     end
