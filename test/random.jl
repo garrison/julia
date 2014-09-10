@@ -80,6 +80,21 @@ if sizeof(Int32) < sizeof(Int)
 
 end
 
+# BigInt specific
+for T in [UInt32, UInt64, UInt128, Int128]
+    s = big(typemax(T)-1000) : big(typemax(T)) + 10000
+    @test rand(s) != rand(s)
+    @test big(typemax(T)-1000) <= rand(s) <= big(typemax(T)) + 10000
+    r = rand(s, 1, 2)
+    @test size(r) == (1, 2)
+    @test typeof(r) == Matrix{BigInt}
+
+    srand(0)
+    r = rand(s)
+    srand(0)
+    @test rand(s) == r
+end
+
 randn(100000)
 randn!(Array(Float64, 100000))
 randn(MersenneTwister(10), 100000)
