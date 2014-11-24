@@ -376,10 +376,10 @@ end
 
 # generator for BigInt
 immutable RandIntGenBigInt <: RangeGenerator
-    a::BigInt      # first
-    m::BigInt      # range length - 1
-    nlimbs::Int    # number of limbs in generated BigInt's
-    mask::Culong   # applied to the highest limb
+    a::BigInt             # first
+    m::BigInt             # range length - 1
+    limbs::Array{Culong}  # buffer to be copied into generated BigInt's
+    mask::Culong          # applied to the highest limb
 end
 
 function inrange(r::UnitRange{BigInt})
@@ -389,7 +389,7 @@ function inrange(r::UnitRange{BigInt})
     nlimbs, highbits = divrem(nd, 8*sizeof(Culong))
     highbits > 0 && (nlimbs += 1)
     mask = highbits == 0 ? ~zero(Culong) : one(Culong)<<highbits - one(Culong)
-    return RandIntGenBigInt(first(r), m, nlimbs, mask)
+    return RandIntGenBigInt(first(r), m, Array(Culong, nlimbs), mask)
 end
 
 
@@ -422,11 +422,11 @@ end
 function rand(rng::AbstractRNG, g::RandIntGenBigInt)
     x = BigInt()
     while true
-        xd = ccall((:__gmpz_limbs_write, :libgmp), Ptr{Culong}, (Ptr{BigInt}, Cint), &x, g.nlimbs)
-        limbs = pointer_to_array(xd, g.nlimbs)
-        rand!(rng, limbs)
-        limbs[end] &= g.mask
-        ccall((:__gmpz_limbs_finish, :libgmp), Void, (Ptr{BigInt}, Cint), &x, g.nlimbs)
+        rand!(rng, g.limbs)
+        g.limbs[end] &= g.mask
+        ccall((:__gmpz_import, :libgmp), Void,
+              (Ptr{BigInt}, Csize_t, Cint, Csize_t, Cint, Csize_t, Ptr{Void}),
+              &x, length(g.limbs), -1, sizeof(Culong), 0, 0, &g.limbs)
         x <= g.m && break
     end
     ccall((:__gmpz_add, :libgmp), Void, (Ptr{BigInt}, Ptr{BigInt}, Ptr{BigInt}), &x, &x, &g.a)
