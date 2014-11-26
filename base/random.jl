@@ -5,9 +5,10 @@ using Base.dSFMT
 export srand,
        rand, rand!,
        randn, randn!,
+       randexp, randexp!,
        randbool,
-       AbstractRNG, RNG, MersenneTwister,
-       randexp
+       AbstractRNG, RNG, MersenneTwister
+
 
 abstract AbstractRNG
 
@@ -1003,6 +1004,20 @@ function randexp_unlikely(rng, idx, x)
         return randexp(rng)
     end
 end
+
+function randexp!(rng::MersenneTwister, A::Array{Float64})
+    for i = 1:length(A)
+        @inbounds A[i] = randexp(rng)
+    end
+    A
+end
+
+randexp!(A::Array{Float64}) = randexp!(GLOBAL_RNG, A)
+randexp(dims::Dims) = randexp!(Array(Float64, dims))
+randexp(dims::Int...) = randexp!(Array(Float64, dims))
+randexp(rng::MersenneTwister, dims::Dims) = randexp!(rng, Array(Float64, dims))
+randexp(rng::MersenneTwister, dims::Int...) = randexp!(rng, Array(Float64, dims))
+
 
 ## random UUID generation
 
