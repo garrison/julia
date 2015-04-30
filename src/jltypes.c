@@ -1229,7 +1229,7 @@ static int solve_tvar_constraints(cenv_t *env, cenv_t *soln)
 
         // 2. instantiate all RHSes using soln
         if (soln->n > 0) {
-            for(int i=0; i < env->n; i+=2) {
+            for(volatile int i=0; i < env->n; i+=2) {
                 jl_value_t **pS = &env->data[i+1];
                 JL_TRY {
                     *pS = jl_instantiate_type_with(*pS, &soln->data[0], soln->n/2);
@@ -1405,8 +1405,8 @@ jl_value_t *jl_type_intersection_matching(jl_value_t *a, jl_value_t *b,
     //jl_printf(JL_STDOUT, "sol: "); print_env(&eqc);
 
     int env0 = eqc.n;
-    jl_value_t **tvs;
-    int tvarslen;
+    jl_value_t **volatile tvs;
+    volatile int tvarslen;
     if (jl_is_typevar(tvars)) {
         tvs = (jl_value_t**)&tvars;
         tvarslen = 1;
@@ -1450,7 +1450,7 @@ jl_value_t *jl_type_intersection_matching(jl_value_t *a, jl_value_t *b,
           N = 1
           So we need to instantiate all the RHS's first.
         */
-        for(int i=0; i < eqc.n; i+=2) {
+        for(volatile int i=0; i < eqc.n; i+=2) {
             jl_value_t *rhs = eqc.data[i+1];
             int tvar = jl_is_typevar(rhs);
             jl_value_t *rhs2 = rhs;

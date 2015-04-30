@@ -515,7 +515,7 @@ static jl_value_t *eval_body(jl_array_t *stmts, jl_value_t **locals, size_t nl, 
                              int start, int toplevel)
 {
     jl_handler_t __eh;
-    size_t i=start;
+    volatile size_t i=start;
 
     while (1) {
         jl_value_t *stmt = jl_cellref(stmts,i);
