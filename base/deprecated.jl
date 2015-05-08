@@ -212,6 +212,8 @@ end
 @deprecate inf{T<:FloatingPoint}(::Type{T})  convert(T,Inf)
 @deprecate nan{T<:FloatingPoint}(::Type{T})  convert(T,NaN)
 
+finalizer(::Union(Function,Ptr), ::Union(Function,Ptr)) = error("finalizer(f1::Union(Function,Ptr), f2::Union(Function,Ptr)) is ambiguous due to deprecation")
+
 function finalizer(o::Any, f::Union(Function,Ptr))
     depwarn("finalizer(o::Any, f::Union(Function,Ptr)) is deprecated, " *
             "use finalizer(f::Union(Function,Ptr), o::Any) instead", :finalizer)
